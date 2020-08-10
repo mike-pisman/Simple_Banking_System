@@ -4,6 +4,7 @@
 
 import sys
 import random
+import math
 
 
 class Bank:
@@ -47,8 +48,7 @@ class Bank:
             pin = input(">").strip()
             if pin.isdigit():
                 account_number = card_number[6:15]
-                print(account_number)
-                if self.get_account(int(account_number), pin):
+                if self.get_account(account_number, pin):
                     print("You have successfully logged in!")
                     self.account_menu(account_number)
                     return
@@ -61,7 +61,9 @@ class Bank:
             if new_number not in self.accounts.keys():
                 break
         pin = generate_pin()
-        print("Your card number:", generate_card_number(new_number), "Your card PIN:", pin, sep="\n")
+        card = generate_card_number(new_number)
+        print(len(card))
+        print("Your card number:", card, "Your card PIN:", pin, sep="\n")
         self.accounts[new_number] = pin
 
     def get_account(self, account, pin):
@@ -75,14 +77,27 @@ class Bank:
 
 def generate_card_number(acc_number):
     iin = "400000"
-    checksum = "5"
-    return int(iin + str(acc_number) + checksum)
+    luhn_sum = luhn_algorithm(iin + acc_number)
+    checksum = 10 - luhn_sum % 10 if luhn_sum % 10 != 0 else 0
+    return iin + acc_number + str(checksum)
 
 def generate_account_number():
     acc_number = ""
     for _ in range(9):
         acc_number += str(random.randrange(10))
-    return int(acc_number)
+    return acc_number
+
+def generate_checksum(luhn_result):
+    return 0
+
+def luhn_algorithm(card_number):
+    card_number = list(map(int, card_number))
+    for i, _ in enumerate(card_number, 1):
+        if i % 2 != 0:
+            card_number[i - 1] *= 2
+        if card_number[i - 1] > 9:
+            card_number[i - 1] -= 9
+    return sum(card_number)
 
 def generate_pin():
     pin = ""
