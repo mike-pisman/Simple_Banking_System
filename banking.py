@@ -1,20 +1,35 @@
 # Mikhail Pisman
 # Simple Banking System
-#
+# https://github.com/mike-pisman/Simple_Banking_System
 
 import sys
 import random
 import math
+import sqlite3
+from collections import namedtuple
 
+connection = sqlite3.connect('card.s3db')
+cursor = connection.cursor()
 
 class Bank:
+    global cursor, connection
+    Account = namedtuple('Account', 'id, card, pin, balance')
+
     def __init__(self):
-        self.accounts = {}
+        cursor.executescript('create table if not exists card(' +
+                            'id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,' +
+                            'number TEXT NOT NULL,' +
+                            'pin TEXT NOT NULL,' +
+                            'balance INTEGER NOT NULL DEFAULT 0' +
+                            ')')
+        connection.commit()
         self.main_menu()
 
     def main_menu(self):
+        # self.cursor.execute('drop table card')
+        # self.connection.commit()
         options = ["1. Create an account", "2. Log into account", "0. Exit"]
-        functions = {"1": self.new_account, "2": self.log_in, "0": self.exit}
+        functions = {"1": self.new_account, "2": self.log_in, "0": exit}
 
         print("", *options, sep="\n")
         choice = input(">").strip()
@@ -25,21 +40,6 @@ class Bank:
             functions[choice]()
         return self.main_menu()
 
-    def account_menu(self, account):
-        options = ["1. Balance", "2. Log out", "0. Exit"]
-        functions = {"1": self.print_balance, "2": self.main_menu, "0": self.exit}
-        print("", *options, sep="\n")
-        choice = input(">").strip()
-
-        if choice not in functions.keys():
-            print("This option does not exist.\nPlease try again")
-        else:
-            functions[choice]()
-
-    def exit(self):
-        print("\nBye!")
-        sys.exit()
-
     def log_in(self):
         print("Enter your card number:")
         card_number = input(">").strip()
@@ -47,33 +47,132 @@ class Bank:
             print("Enter your PIN:")
             pin = input(">").strip()
             if pin.isdigit():
-                account_number = card_number[6:15]
-                if self.get_account(account_number, pin):
+                account = self.get_account(card_number, pin)
+                if account:
+                    account = Account(account)
                     print("You have successfully logged in!")
-                    self.account_menu(account_number)
+                    account.account_menu()
                     return
         print("Wrong card number or PIN!")
 
     def new_account(self):
         print("\nYour card has been created")
+        accounts = self.get_all_accounts()
         while True:
             new_number = generate_account_number()
-            if new_number not in self.accounts.keys():
+            if new_number not in accounts.keys():
                 break
         pin = generate_pin()
         card = generate_card_number(new_number)
-        print(len(card))
-        print("Your card number:", card, "Your card PIN:", pin, sep="\n")
-        self.accounts[new_number] = pin
 
-    def get_account(self, account, pin):
-        if account in self.accounts.keys():
-            return self.accounts[account] == pin
-        return False
+        print("Your card number:", card, "Your card PIN:", pin, sep="\n")
+        cursor.execute("insert into card(number, pin) values (?, ?) ", (card, pin))
+        connection.commit()
+
+    def get_all_accounts(self):
+        accounts = {}
+        cursor.execute('select * from card')
+        for acc in map(self.Account._make, cursor.fetchall()):
+            accounts[acc.card] = acc.pin
+        return accounts
+
+    def get_account(self, account_numb, pin):
+        cursor.execute("select * from card where number = ? and pin = ?", (account_numb, pin))
+        f = cursor.fetchone()
+        return self.Account._make(f) if f else None
+
+
+class Account:
+    def __init__(self, data):
+        self.id = data.id
+        self.card = data.card
+        self.pin = data.pin
+        self.balance = data.balance
+
+    def account_menu(self):
+        options = ["1. Balance", "2. Add income", "3. Do transfer", "4. Close account","5. Log out", "0. Exit"]
+        functions = {"1": self.print_balance, "2": self.add_income, "3": self.transfer_money, "4": self.close_account, "5": self.log_out, "0": exit}
+        print("", *options, sep="\n")
+        choice = input(">").strip()
+
+        if choice not in functions.keys():
+            print("This option does not exist.\nPlease try again")
+            return self.account_menu()
+        else:
+            functions[choice]()
 
     def print_balance(self):
-        print("0")
+        print('Balance:', self.balance)
         return self.account_menu()
+
+    def add_income(self):
+        print("Enter income:")
+        income = input(">").strip()
+        if income.isdigit() and int(income) > 0:
+            self.set_balance(int(income) + self.balance)
+            print("Income was added!")
+        else:
+            print("Incorrect amount!")
+        return self.account_menu()
+
+    def set_balance(self, balance):
+        self.balance = balance
+        cursor.execute('update card set balance = ? where id = ?', (balance, self.id))
+        connection.commit()
+
+    def transfer_money(self):
+        print("Transfer:", "Enter card number:", sep="\n")
+        card = input(">").strip()
+        if len(card) == 16 and card.isdigit() and check_card(card):
+            if card != self.card:
+                other_acc = self.get_account(card)
+                if other_acc:
+                    other_id = other_acc[0]
+                    print("Enter how much money you want to transfer:")
+                    amount = input(">").strip()
+                    if amount.isdigit() and int(amount) > 0:
+                        amount = int(amount)
+                        if amount <= self.balance:
+                            self.balance -= amount
+                            cursor.execute('update card set balance = ? where id = ?', (self.balance, self.id))
+                            other_balance = other_acc[1]
+                            cursor.execute('update card set balance = ? where id = ?', (other_balance + amount, other_id))
+                            connection.commit()
+                            print("Success!")
+                        else:
+                            print("Not enough money!")
+                    else:
+                        print("Incorrect amount!")
+                else:
+                    print("Such a card does not exist.")
+            else:
+                print("You can't transfer money to the same account!")
+        else:
+            print("Probably you made mistake in the card number. Please try again!")
+        return self.account_menu()
+
+    def get_account(self, card):
+        cursor.execute("select id, balance from card where number = ?", (card, ))
+        f = cursor.fetchone()
+        return f
+
+    def close_account(self):
+        cursor.execute('delete from card where id = ?', (self.id, ))
+        connection.commit()
+        print("The account has been closed!")
+
+    def log_out(self):
+        print("You have successfully logged out!")
+
+def check_card(card):
+    luhn_sum = luhn_algorithm(card[:-1])
+    checksum = 10 - luhn_sum % 10 if luhn_sum % 10 != 0 else 0
+    return checksum == int(card[-1])
+
+def exit():
+    print("\nBye!")
+    connection.close()
+    sys.exit()
 
 def generate_card_number(acc_number):
     iin = "400000"
