@@ -102,6 +102,8 @@ class Account:
             functions[choice]()
 
     def print_balance(self):
+        cursor.execute('select balance from card where id = ?', (self.balance, self.id))
+        self.balance = cursor.fetchone()[0]
         print('Balance:', self.balance)
         return self.account_menu()
 
@@ -125,9 +127,9 @@ class Account:
         card = input(">").strip()
         if len(card) == 16 and card.isdigit() and check_card(card):
             if card != self.card:
-                other_acc = self.get_account(card)
-                if other_acc:
-                    other_id = other_acc[0]
+                other_id = self.get_account_id(card)
+                if other_id:
+                    other_id = other_id[0]
                     print("Enter how much money you want to transfer:")
                     amount = input(">").strip()
                     if amount.isdigit() and int(amount) > 0:
@@ -135,8 +137,7 @@ class Account:
                         if amount <= self.balance:
                             self.balance -= amount
                             cursor.execute('update card set balance = ? where id = ?', (self.balance, self.id))
-                            other_balance = other_acc[1]
-                            cursor.execute('update card set balance = ? where id = ?', (other_balance + amount, other_id))
+                            cursor.execute('update card set balance = balance + (?) where id = ?', (amount, other_id))
                             connection.commit()
                             print("Success!")
                         else:
@@ -151,8 +152,8 @@ class Account:
             print("Probably you made mistake in the card number. Please try again!")
         return self.account_menu()
 
-    def get_account(self, card):
-        cursor.execute("select id, balance from card where number = ?", (card, ))
+    def get_account_id(self, card):
+        cursor.execute("select id from card where number = ?", (card, ))
         f = cursor.fetchone()
         return f
 
